@@ -155,7 +155,7 @@ h2{font-size:15px;margin:0;font-weight:700;display:flex;align-items:center;gap:6
 .key .k3{background:var(--card-soft);box-shadow:inset 0 0 0 1px var(--card)}
 .key .k4{background:var(--inc);border-radius:50%}
 .key .k5{background:none;border:1.5px solid var(--card-ink);box-sizing:border-box;border-radius:3px}
-.row.sched{opacity:.8}.row.sched .m span{font-style:italic}
+.row.sched{opacity:.85}.row.sched .m span{font-style:italic}
 .chk{display:flex;gap:10px;align-items:flex-start;font-size:14px;line-height:1.4;margin-top:6px}.chk input{margin-top:3px;width:18px;height:18px;flex:none}
 .tagsm{display:inline-block;font-size:11px;border-radius:6px;padding:0 6px;background:var(--card-soft);color:var(--card-ink);margin-left:4px}
 
@@ -254,6 +254,11 @@ form{display:flex;flex-direction:column;gap:14px;margin-top:14px}
 .seg button[aria-pressed=true]{background:var(--pink-soft);box-shadow:inset 0 0 0 2px var(--pink);font-weight:700}
 .seg button.m-cash[aria-pressed=true]{background:var(--cash);color:var(--on-cash);box-shadow:none}
 .seg button[data-v=card][aria-pressed=true]{background:var(--card);color:var(--on-card);box-shadow:none}
+.calcbar{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:8px}
+.calcbar button{height:40px;border:1.5px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink);font-size:18px;font-weight:700;font-family:var(--font-num)}
+.calcbar button.eq{background:var(--pink);color:var(--on-pink);border-color:transparent}
+.calcbar button:active{transform:scale(.96)}
+.calcprev{min-height:18px;margin-top:6px;font-size:13px;color:var(--muted)}
 .amount-in{font-family:var(--font-num) !important;font-size:30px !important;font-weight:800;padding:10px 14px !important}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
 .check{display:flex;align-items:flex-start;gap:10px;margin-top:10px;font-size:14px}
@@ -422,12 +427,14 @@ html:not(.nofr) .pw .sbar{display:flex;position:absolute;top:0;left:0;right:0;he
         </div>
         <div id="amountBox">
           <label class="lbl" for="amount">金額（NT$）</label>
-          <input id="amount" class="amount-in num" type="text" inputmode="numeric" autocomplete="off" placeholder="0">
+          <input id="amount" class="amount-in num" type="text" inputmode="decimal" autocomplete="off" placeholder="0">
+          <div class="calcbar" data-t="amount"><button type="button" data-act="calc" data-v="+">＋</button><button type="button" data-act="calc" data-v="-">−</button><button type="button" data-act="calc" data-v="*">×</button><button type="button" data-act="calc" data-v="/">÷</button><button type="button" class="eq" data-act="calc" data-v="=">＝</button></div>
+          <div class="calcprev" id="calcPrev" aria-live="polite"></div>
         </div>
         <div id="fcRow"><label class="check" style="margin-top:0"><input type="checkbox" id="fcOn"><span>外幣支出<small>輸入外幣金額，自動換算成台幣。</small></span></label></div>
         <div id="fcBox" class="fcbox" hidden>
           <div><label class="lbl" for="fcCode">幣別</label><select id="fcCode"></select></div>
-          <div><label class="lbl" for="fcAmt">外幣金額</label><input id="fcAmt" type="text" inputmode="decimal" autocomplete="off" placeholder="0"></div>
+          <div><label class="lbl" for="fcAmt">外幣金額</label><input id="fcAmt" type="text" inputmode="decimal" autocomplete="off" placeholder="0"><div class="calcbar" data-t="fcAmt"><button type="button" data-act="calc" data-v="+">＋</button><button type="button" data-act="calc" data-v="-">−</button><button type="button" data-act="calc" data-v="*">×</button><button type="button" data-act="calc" data-v="/">÷</button><button type="button" class="eq" data-act="calc" data-v="=">＝</button></div></div>
           <div class="full"><label class="lbl" for="fcRate">匯率（1 外幣 = 幾元台幣）</label><input id="fcRate" type="text" inputmode="decimal" autocomplete="off"></div>
           <div class="full"><div class="s">換算後</div><div class="fcprev" id="fcPrev">NT$ —</div><p class="hint" id="fcHint"></p></div>
         </div>
@@ -489,7 +496,7 @@ html:not(.nofr) .pw .sbar{display:flex;position:absolute;top:0;left:0;right:0;he
   var CATS_INC=['薪資','獎金','其他收入'];
   var METHOD={cash:'現金',transfer:'匯款',card:'信用卡'};
   var FXM={cash:'現金',transfer:'匯款扣款',card:'信用卡'};
-  var KIND={normal:'一般',fixed:'保底',shared:'公帳',travel:'旅遊'};
+  var KIND={normal:'一般',fixed:'保底',shared:'公帳',travel:'旅遊',saving:'存款'};
   var EVERY={1:'每月',2:'每 2 個月',3:'每季',6:'每半年',12:'每年'};
   var WD=['日','一','二','三','四','五','六'];
   var JTOTAL=35;
@@ -516,6 +523,24 @@ html:not(.nofr) .pw .sbar{display:flex;position:absolute;top:0;left:0;right:0;he
   var uid=function(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6)};
   var sum=function(a){return a.reduce(function(s,e){return s+e.amount},0)};
   var $=function(id){return document.getElementById(id)};
+  /* calculator: + − × ÷ with normal precedence, no eval */
+  function calcEval(str){
+    var s=String(str).replace(/[,\s]/g,'').replace(/[×xX＊]/g,'*').replace(/[÷／]/g,'/').replace(/[−－–]/g,'-').replace(/＋/g,'+');
+    if(!s)return null;
+    var t=s.match(/\d+\.?\d*|\.\d+|[+\-*\/]/g);
+    if(!t||t.join('').length!==s.length)return null;
+    var pos=0;
+    function fac(){
+      if(t[pos]==='-'){pos++;return -fac()}
+      if(t[pos]==='+'){pos++;return fac()}
+      var n=parseFloat(t[pos++]);if(isNaN(n))throw 0;return n;
+    }
+    function term(){var v=fac();while(t[pos]==='*'||t[pos]==='/'){var o=t[pos++],r=fac();v=o==='*'?v*r:v/r}return v}
+    function expr(){var v=term();while(t[pos]==='+'||t[pos]==='-'){var o=t[pos++],r=term();v=o==='+'?v+r:v-r}return v}
+    try{var v=expr();if(pos!==t.length||!isFinite(v))return null;return v}catch(e){return null}
+  }
+  function hasOp(str){return /[+×÷*\/−\-xX]/.test(String(str).replace(/^\s*-/,''))}
+  function calcInt(str){var v=calcEval(str);return v===null?null:Math.round(v)}
   var num=function(v){var s=String(v).replace(/[,\s]/g,'');if(s==='')return null;var n=Math.round(parseFloat(s));return isNaN(n)?null:n};
   var ic=function(n,c,big){return '<svg class="ic '+(c||'')+(big?' big':'')+'" aria-hidden="true"><use href="#i-'+n+'"/></svg>'};
 
@@ -619,8 +644,15 @@ html:not(.nofr) .pw .sbar{display:flex;position:absolute;top:0;left:0;right:0;he
     if(!(s.payday>=1&&s.payday<=31))s.payday=1;
     s.months=s.months||{};s.plans=s.plans||{};
     s.cats=s.cats||{exp:CATS_EXP.slice(),inc:CATS_INC.slice()};
-    s.subs=(s.subs||[]).map(function(b){b.every=b.every||1;b.anchor=b.anchor||1;b.gen=b.gen||{};return b});
-    s.fixed=(s.fixed||[]).map(function(f){f.every=f.every||1;f.anchor=f.anchor||1;return f});
+    s.fixed=(s.fixed||[]).map(function(f){
+      f.every=f.every||1;f.anchor=f.anchor||1;if(f.day==null)f.day=1;if(f.auto==null)f.auto=false;
+      if(!f.from){var n0=new Date();f.from=ymd(new Date(n0.getFullYear(),n0.getMonth(),1))}
+      f.gen=f.gen||{};return f});
+    if(s.subs&&s.subs.length){
+      s.subs.forEach(function(b){s.fixed.push({id:b.id,name:b.name,amount:b.amount,method:b.method,day:b.day,every:b.every||1,anchor:b.anchor||1,auto:true,from:b.from,gen:b.gen||{}})});
+      s.entries.forEach(function(e){if(e.sid){e.tpl=e.sid;e.kind='fixed';delete e.sid}});
+    }
+    delete s.subs;
     s.entries.forEach(function(e){e.kind=e.kind||'normal'});
     if(!s.jars){var sj=seedJars();s.jars=sj.jars;s.jarLog=sj.jarLog}
     s.jarLog=s.jarLog||[];
@@ -649,11 +681,12 @@ html:not(.nofr) .pw .sbar{display:flex;position:absolute;top:0;left:0;right:0;he
   }
   var state=load();
   function save(){try{localStorage.setItem(KEY,JSON.stringify(state))}catch(e){}}
+  try{if(localStorage.getItem(KEY))save()}catch(e){}
 
   var view={y:now.getFullYear(),m:now.getMonth()};
   var nm=new Date(now.getFullYear(),now.getMonth()+1,1);
   var planView={y:nm.getFullYear(),m:nm.getMonth()};
-  var sel=todayStr,tab='cal',pendingDel=null,pendingFx=null,pendingSub=null,subEditing=null,pieMode='all',pieRange='sal';
+  var sel=todayStr,tab='cal',pendingDel=null,pendingFx=null,pieMode='all',pieRange='sal';
   var editingId=null,editFrom='cal',fxEditing=null;
   var jarPanel=null,jarEditing=null,pendingJar=null,pendingLog=null,jarShown={};
   var pendingDone=null,leavingJar=null,justDone=null,pendingTrophy=null;
@@ -682,33 +715,37 @@ html:not(.nofr) .pw .sbar{display:flex;position:absolute;top:0;left:0;right:0;he
     return (((m0-((f.anchor||1)-1))%ev)+ev)%ev===0;
   }
 
-  /* recurring charges (separate from 保底) */
-  function subDue(sb,y,m0){
-    if(!fxDue(sb,m0))return null;
-    var dim=new Date(y,m0+1,0).getDate(),ds=y+'-'+pad(m0+1)+'-'+pad(Math.min(sb.day,dim));
-    return ds>=sb.from?ds:null;
+  /* 保底 on the calendar */
+  function fxDate(f,y,m0){
+    if(!fxDue(f,m0)||!(f.day>0))return null;
+    var dim=new Date(y,m0+1,0).getDate(),ds=y+'-'+pad(m0+1)+'-'+pad(Math.min(f.day,dim));
+    return (!f.from||ds>=f.from)?ds:null;
   }
-  function subFixedSum(y,m0){return sum(state.subs.filter(function(sb){return sb.inFixed&&subDue(sb,y,m0)}))}
+  function fxHave(f,gk){return !!(f.gen&&f.gen[gk])||state.entries.some(function(e){return e.tpl===f.id&&e.date.indexOf(gk)===0})}
   function schedFor(ds){
-    var p=parse(ds),k=p.getFullYear()+'-'+pad(p.getMonth()+1);
-    return state.subs.filter(function(sb){return subDue(sb,p.getFullYear(),p.getMonth())===ds&&!(sb.gen&&sb.gen[k])});
+    var p=parse(ds),y=p.getFullYear(),m0=p.getMonth(),gk=y+'-'+pad(m0+1);
+    return state.fixed.filter(function(f){return fxDate(f,y,m0)===ds&&!fxHave(f,gk)});
   }
-  function genSubs(){
+  function genFixed(){
     var n=0,ty=now.getFullYear(),tm=now.getMonth();
-    state.subs.forEach(function(sb){
-      sb.gen=sb.gen||{};
-      var p=parse(sb.from),y=p.getFullYear(),m=p.getMonth(),guard=0;
-      while((y<ty||(y===ty&&m<=tm))&&guard++<600){
-        var ds=subDue(sb,y,m),gk=y+'-'+pad(m+1);
-        if(ds&&ds<=todayStr&&!sb.gen[gk]){
-          state.entries.push({id:uid(),date:ds,type:'exp',amount:sb.amount,method:sb.method,cat:sb.cat,note:sb.name,kind:sb.inFixed?'fixed':'normal',sid:sb.id});
-          sb.gen[gk]=1;n++;
+    state.fixed.forEach(function(f){
+      if(!f.auto||!(f.day>0)||!f.from)return;
+      f.gen=f.gen||{};
+      var p=parse(f.from),y=p.getFullYear(),m=p.getMonth(),g=0;
+      while((y<ty||(y===ty&&m<=tm))&&g++<600){
+        var ds=fxDate(f,y,m),gk=y+'-'+pad(m+1);
+        if(ds&&ds<=todayStr&&!fxHave(f,gk)){
+          state.entries.push({id:uid(),date:ds,type:'exp',amount:f.amount,method:f.method,cat:'保底',note:f.name,kind:'fixed',tpl:f.id});
+          f.gen[gk]=1;n++;
         }
         m++;if(m>11){m=0;y++}
       }
     });
     if(n)save();
     return n;
+  }
+  function cardFixLine(st){
+    return st.fixedCard>0?'<p class="s" style="margin:10px 0 0">信用卡保底 '+fmt(st.fixedCard)+'（'+(view.m+1)+' 月循環），另外算，不佔刷卡額度</p>':'';
   }
 
   function stats(){
@@ -722,14 +759,15 @@ html:not(.nofr) .pw .sbar{display:flex;position:absolute;top:0;left:0;right:0;he
     var dim=new Date(view.y,view.m+1,0).getDate();
     var inside=todayStr>=per.sS&&todayStr<=per.eS;
     var daysLeft=inside?Math.round((per.e-parse(todayStr))/864e5)+1:(todayStr<per.sS?per.days:0);
-    var used=sum(ents.filter(counts));
+    var used=sum(ents.filter(function(e){return counts(e)&&!isBill(e)}));
     return {key:key,all:all,ents:ents,per:per,cper:cper,cap:b.cap,limit:b.card,used:used,
-      cardUsed:sum(cents.filter(function(e){return counts(e)&&isBill(e)})),
+      cardUsed:sum(cents.filter(function(e){return e.kind==='normal'&&!e.jar&&isBill(e)})),
+      fixedCard:sum(state.fixed.filter(function(f){return f.method==='card'&&fxDue(f,view.m)})),
       cash:sum(ents.filter(function(e){return !isBill(e)})),
       card:sum(ents.filter(isBill)),
       prepaid:sum(ents.filter(function(e){return e.method==='card'&&e.prepaid})),
       fixed:sum(ents.filter(function(e){return e.kind==='fixed'})),
-      fixedPlan:sum(state.fixed.filter(function(f){return fxDue(f,view.m)}))+subFixedSum(view.y,view.m),
+      fixedPlan:sum(state.fixed.filter(function(f){return fxDue(f,view.m)})),
       shared:sum(ents.filter(function(e){return e.kind==='shared'})),
       travel:sum(ents.filter(function(e){return e.kind==='travel'})),
       inc:sum(pall.filter(function(e){return e.type==='inc'})),
@@ -741,7 +779,7 @@ html:not(.nofr) .pw .sbar{display:flex;position:absolute;top:0;left:0;right:0;he
   function fmtFc(n){return Number(n).toLocaleString('en-US',{maximumFractionDigits:2})}
   function fcText(e){var c=FC[e.fc];return (c?c.s:e.fc+' ')+fmtFc(e.fa)+'（匯率 '+e.fr+'）'}
   function updateFcPrev(){
-    var fa=parseFloat(String($('fcAmt').value).replace(/,/g,'')),fr=parseFloat(String($('fcRate').value).replace(/,/g,''));
+    var fa=calcEval($('fcAmt').value),fr=parseFloat(String($('fcRate').value).replace(/,/g,''));
     $('fcPrev').textContent=(fa>0&&fr>0)?'NT$ '+fmt(Math.max(1,fa*fr)):'NT$ —';
     var c=FC[form.fcCode];
     $('fcHint').textContent=state.fcRates[form.fcCode]>0?'這是上次用的匯率，可以直接修改。'
@@ -821,7 +859,7 @@ html:not(.nofr) .pw .sbar{display:flex;position:absolute;top:0;left:0;right:0;he
   function rowHtml(e){
     var isInc=e.type==='inc';
     var dot=isInc?'inc':(isBill(e)?'bill':'cash');
-    var meta=esc(e.cat)+(isInc?'':' · '+METHOD[e.method]+(e.prepaid?'（已預繳）':'')+(e.kind&&e.kind!=='normal'?' · '+KIND[e.kind]:'')+(e.sid?' · 循環扣款':'')+(e.jar?' · 用「'+esc(jarName(e.jar))+'」付':'')+(e.fc?' · '+esc(fcText(e)):''));
+    var meta=esc(e.cat)+(isInc?'':' · '+METHOD[e.method]+(e.prepaid?'（已預繳）':'')+(e.kind&&e.kind!=='normal'?' · '+KIND[e.kind]:'')+(e.jar?' · 用「'+esc(jarName(e.jar))+'」付':'')+(e.fc?' · '+esc(fcText(e)):''));
     return '<div class="row"><i class="dot '+dot+'"></i><div class="m"><b>'+esc(e.note||e.cat)+'</b><span>'+meta+'</span></div>'+
       '<div class="r"><span class="num amt '+(isInc?'inc':'')+'">'+(isInc?'+':'−')+fmt(e.amount)+'</span>'+delUi(e)+'</div></div>';
   }
@@ -848,7 +886,7 @@ html:not(.nofr) .pw .sbar{display:flex;position:absolute;top:0;left:0;right:0;he
     }
     h+=M('hero')+'<section class="card cute"><div class="hero">'+mood(st)+'<div><div class="eyebrow">'+(st.isCur?'今天起每日可花':'每日可花')+'</div>'+
       '<div class="big'+(pd.bad?' bad':'')+'"><small>NT$</small>'+pd.txt+'</div><div class="s">'+pd.sub+'</div>'+potLine()+'</div></div>'+
-      '<div class="mgrid">'+meter('生活費 <span class="s" style="font-weight:400">'+st.per.txt+'</span>',st.used,st.cap,'living')+meter('刷卡額度 <span class="s" style="font-weight:400">'+st.cper.txt+'</span>',st.cardUsed,st.limit,'cardm')+'</div></section>';
+      '<div class="mgrid">'+meter('生活費 <span class="s" style="font-weight:400">'+st.per.txt+'</span>',st.used,st.cap,'living')+meter('刷卡額度 <span class="s" style="font-weight:400">'+st.cper.txt+'</span>',st.cardUsed,st.limit,'cardm')+'</div>'+cardFixLine(st)+'</section>';
     h+=M('cal')+'<section><div class="grid" role="grid">'+WD.map(function(w){return '<div class="wd">'+w+'</div>'}).join('');
     for(var i=0;i<first;i++)h+='<div class="cell empty"></div>';
     for(var d=1;d<=dim;d++){
@@ -861,13 +899,13 @@ html:not(.nofr) .pw .sbar{display:flex;position:absolute;top:0;left:0;right:0;he
         (cash?'<span class="c1 num">'+kfmt(cash)+'</span>':'')+(card?'<span class="c2 num">'+kfmt(card)+'</span>':'')+
         (inc?'<i class="incdot"></i>':'')+(schedFor(ds).length?'<i class="subdot"></i>':'')+(d===closeDay?'<em class="cl">結帳</em>':'')+'</button>';
     }
-    h+='</div><div class="key"><span><i class="k1"></i>現金／匯款</span><span><i class="k2"></i>信用卡</span><span><i class="k3"></i>結帳日</span><span><i class="k4"></i>有收入</span><span><i class="k5"></i>預定扣款</span></div></section>';
+    h+='</div><div class="key"><span><i class="k1"></i>現金／匯款</span><span><i class="k2"></i>信用卡</span><span><i class="k3"></i>結帳日</span><span><i class="k4"></i>有收入</span><span><i class="k5"></i>預定保底</span></div></section>';
     var selArr=sortDay(state.entries.filter(function(e){return e.date===sel}));
     h+=M('day')+'<section class="card"><div class="dayhead"><div class="t">'+dayLabel(sel)+'</div><button type="button" class="mini" data-act="add-here">＋ 記一筆</button></div>'+
       daySummary(selArr)+
       (function(){
         var sc=schedFor(sel);
-        var schedH=sc.map(function(sb){return '<div class="row sched"><i class="dot '+(sb.method==='card'?'bill':'cash')+'"></i><div class="m"><b>'+esc(sb.name)+'</b><span>預定扣款 · '+METHOD[sb.method]+(sb.inFixed?' · 算在保底':'')+'</span></div><div class="r"><span class="num amt">−'+fmt(sb.amount)+'</span></div></div>'}).join('');
+        var schedH=sc.map(function(sf){return '<div class="row sched"><i class="dot '+(sf.method==='card'?'bill':'cash')+'"></i><div class="m"><b>'+esc(sf.name)+'</b><span>預定 · 保底 · '+METHOD[sf.method]+(sf.auto?' · 自動記':'')+'</span></div><div class="r"><span class="num amt">−'+fmt(sf.amount)+'</span><button type="button" class="mini" data-act="fx-rec" data-id="'+sf.id+'" data-date="'+sel+'">記入</button></div></div>'}).join('');
         return (selArr.length||sc.length)?'<div>'+selArr.map(rowHtml).join('')+schedH+'</div>':emptyBox('這天還沒有紀錄');
       })()+'</section>';
     $('tab-cal').innerHTML=finish('cal',h);
@@ -880,19 +918,20 @@ html:not(.nofr) .pw .sbar{display:flex;position:absolute;top:0;left:0;right:0;he
     if(ymd(cand)>=per.sS)cand=endMk(py,pm-1,c);
     var Es=ymd(cand);
     var cardAuto=sum(state.entries.filter(function(e){
-      return e.type==='exp'&&isBill(e)&&e.kind!=='shared'&&e.kind!=='fixed'&&ymd(cycleEnd(e.date,c))===Es;
+      return e.type==='exp'&&isBill(e)&&e.kind!=='shared'&&e.kind!=='fixed'&&e.kind!=='saving'&&ymd(cycleEnd(e.date,c))===Es;
     }));
-    var fixedAuto=sum(state.fixed.filter(function(f){return fxDue(f,pm)}))+subFixedSum(py,pm);
+    var fixedAuto=sum(state.fixed.filter(function(f){return fxDue(f,pm)}));
+    var fixedCardAuto=sum(state.fixed.filter(function(f){return f.method==='card'&&fxDue(f,pm)}));
     var salAuto=sum(state.entries.filter(function(e){return e.type==='inc'&&inPer(e,per)}));
     var saveAuto=sum(state.jarLog.filter(function(l){return l.src==='salary'&&l.month===key}))+sum(state.invLog.filter(function(l){return l.kind==='in'&&l.src==='salary'&&l.month===key}).map(function(l){return {amount:l.amount}}));
     var v={salary:p.salary>0?p.salary:salAuto,card:p.card!=null?p.card:cardAuto,fixed:p.fixed!=null?p.fixed:fixedAuto,save:p.save!=null?p.save:saveAuto,other:p.other||0};
-    return {key:key,Es:Es,p:p,auto:{card:cardAuto,fixed:fixedAuto,save:saveAuto,salary:salAuto},v:v,
+    return {key:key,Es:Es,fixedCard:fixedCardAuto,p:p,auto:{card:cardAuto,fixed:fixedAuto,save:saveAuto,salary:salAuto},v:v,
       result:v.salary-v.card-v.fixed-v.save-v.other,dim:per.days,per:per,
       limit:p.limit!=null?p.limit:budgetFor(key).card};
   }
   function planHtml(){
     var py=planView.y,pm=planView.m,P=planCompute(py,pm),p=P.p;
-    var rows=[['salary','薪資（這個月收入）',P.auto.salary,'已記的收入'],['card','− 要繳的信用卡帳單',P.auto.card,'不含保底和公帳，自動帶入'],['fixed','− 保底（所有扣款方式）',P.auto.fixed,'和預算頁的保底相同'],['save','− 存款',P.auto.save,'來自存錢罐與投資的薪資扣款'],['other','− 其他預留',null,'']];
+    var rows=[['salary','薪資（這個月收入）',P.auto.salary,'已記的收入'],['card','− 要繳的信用卡帳單',P.auto.card,'不含保底和公帳，自動帶入'],['fixed','− 保底（所有扣款方式）',P.auto.fixed,'和預算頁的保底相同'+(P.fixedCard?'，其中信用卡保底 '+fmt(P.fixedCard)+' 不佔刷卡額度':'')],['save','− 存款',P.auto.save,'來自存錢罐與投資的薪資扣款'],['other','− 其他預留',null,'']];
     var h='<section class="card cute"><h2>'+ic('sparkle','c-yellow')+'預先計算預算</h2><p class="s" style="margin:4px 0 0">薪資每月不同，輸入後算出這個週期最多能花多少。週期 '+P.per.txt+'，信用卡帳單抓到 '+md(new Date(P.Es+'T00:00:00'))+' 結帳的那期。</p>'+
       '<div class="mnav" style="margin-top:12px"><div class="t" style="font-size:18px">'+py+' 年 '+(pm+1)+' 月</div><div class="btns"><button type="button" class="round" data-act="pl-prev" aria-label="前一個月">‹</button><button type="button" class="round" data-act="pl-next" aria-label="後一個月">›</button></div></div>';
     rows.forEach(function(r){
@@ -914,8 +953,9 @@ html:not(.nofr) .pw .sbar{display:flex;position:absolute;top:0;left:0;right:0;he
     var P=planCompute(view.y,view.m),key=P.key;
     var ents=state.entries.filter(function(e){return inPer(e,P.per)&&e.type==='exp'&&e.kind==='normal'&&!e.jar});
     var cashSpent=sum(ents.filter(function(e){return !isBill(e)})),cardPending=sum(ents.filter(isBill));
-    var left=P.v.salary-P.v.save-P.v.fixed-P.v.card-P.v.other-cashSpent;
-    return {P:P,cashSpent:cashSpent,cardPending:cardPending,left:left,after:left-cardPending};
+    var saved=sum(state.entries.filter(function(e){return e.type==='exp'&&e.kind==='saving'&&inPer(e,P.per)}));
+    var left=P.v.salary-P.v.save-P.v.fixed-P.v.card-P.v.other-cashSpent-saved;
+    return {P:P,saved:saved,cashSpent:cashSpent,cardPending:cardPending,left:left,after:left-cardPending};
   }
   function potLine(){
     var c=potCalc();
@@ -936,7 +976,7 @@ html:not(.nofr) .pw .sbar{display:flex;position:absolute;top:0;left:0;right:0;he
       '<div class="s" style="margin-top:4px">薪資週期 '+P.per.txt+'</div><div class="eyebrow" style="margin-top:10px">現在薪資還剩</div><div class="big'+(c.left<0?' bad':'')+'"><small>NT$</small>'+(c.left<0?'−':'')+fmt(Math.abs(c.left))+'</div>'+
       '<div class="s">再扣掉已刷未繳的信用卡 '+fmt(c.cardPending)+'，剩 <b class="num" style="color:var(--ink)">'+(c.after<0?'−':'')+fmt(Math.abs(c.after))+'</b></div>'+
       '<div class="setting first" style="margin-top:14px;border-top:1.5px dashed var(--line);padding-top:12px"><label for="pot-salary" class="w">這個月薪資<span class="s">'+src+'</span></label><input id="pot-salary" type="text" inputmode="numeric" value="'+(P.p.salary>0?P.p.salary:'')+'" placeholder="'+(P.auto.salary||0)+'"></div>'+
-      '<div class="pot">'+potRow('存進罐子',v.save,'從薪資扣的錢')+potRow('保底',v.fixed,'這個月到期的，含刷卡的')+potCardRow(P)+(v.other?potRow('其他預留',v.other,''):'')+potRow('本月現金／匯款已花',c.cashSpent,'一般支出，含已預繳')+'</div>'+
+      '<div class="pot">'+potRow('存進罐子',v.save,'從薪資扣的錢')+potRow('存款',c.saved,'記帳性質選「存款」的錢')+potRow('保底',v.fixed,'這個月到期的'+(P.fixedCard?'，含信用卡保底 '+fmt(P.fixedCard):''))+potCardRow(P)+(v.other?potRow('其他預留',v.other,''):'')+potRow('本月現金／匯款已花',c.cashSpent,'一般支出，含已預繳')+'</div>'+
       '<p class="s" style="margin:10px 0 0">保底、帳單和其他預留的數字可以在下面的「預先計算預算」調整。</p></section>';
   }
 
@@ -978,7 +1018,7 @@ html:not(.nofr) .pw .sbar{display:flex;position:absolute;top:0;left:0;right:0;he
     h+=M('limit')+'<section class="card"><h2>'+ic('heart','c-pink')+(view.m+1)+' 月額度</h2>'+
       '<div class="setting first" style="margin-top:8px"><label for="cap" class="w">每月花費上限<span class="s">NT$</span></label><input id="cap" type="text" inputmode="numeric" value="'+st.cap+'"></div>'+
       '<div class="setting"><label for="cardlim" class="w">刷卡額度<span class="s">NT$</span></label><input id="cardlim" type="text" inputmode="numeric" value="'+st.limit+'"></div>'+
-      '<div class="mgrid">'+meter('生活費 <span class="s" style="font-weight:400">'+st.per.txt+'</span>',st.used,st.cap,'living')+meter('刷卡額度 <span class="s" style="font-weight:400">'+st.cper.txt+'</span>',st.cardUsed,st.limit,'cardm')+'</div>'+
+      '<div class="mgrid">'+meter('生活費 <span class="s" style="font-weight:400">'+st.per.txt+'</span>',st.used,st.cap,'living')+meter('刷卡額度 <span class="s" style="font-weight:400">'+st.cper.txt+'</span>',st.cardUsed,st.limit,'cardm')+'</div>'+cardFixLine(st)+''+
       '<div class="s" style="margin-top:14px">'+(st.isCur?'今天起每日可花 ':'每日可花 ')+'<b class="num" style="color:var(--ink)">'+pd.txt+'</b>　'+esc(pd.sub)+'</div></section>';
 
     h+=M('plan')+planHtml();
@@ -1119,9 +1159,9 @@ html:not(.nofr) .pw .sbar{display:flex;position:absolute;top:0;left:0;right:0;he
     budget:{pot:'薪資餘額',pie:'支出比例',limit:'月額度',plan:'預先計算預算',pay:'這個月怎麼付的',fc:'外幣花費',bill:'信用卡帳單'},
     jar:{sum:'罐子總覽',jars:'糖果罐',new:'新增罐子',log:'最近的進出',shelf:'成就收藏架'},
     inv:{sum:'總資產',cash:'活存',fund:'基金',trend:'資產變化',new:'新增項目'},
-    set:{fixed:'保底款項',cats:'品項',pal:'色系',cc:'信用卡與上限',subs:'循環扣款',backup:'備份與還原',frame:'手機外框',ex:'範例資料'}
+    set:{fixed:'保底款項',cats:'品項',pal:'色系',cc:'信用卡與上限',backup:'備份與還原',frame:'手機外框',ex:'範例資料'}
   };
-  var DEF={cal:['hero','cal','day'],budget:['pot','pie','limit','plan','pay','fc','bill'],jar:['sum','jars','new','log','shelf'],inv:['sum','cash','fund','trend','new'],set:['fixed','subs','cats','pal','cc','backup','frame','ex']};
+  var DEF={cal:['hero','cal','day'],budget:['pot','pie','limit','plan','pay','fc','bill'],jar:['sum','jars','new','log','shelf'],inv:['sum','cash','fund','trend','new'],set:['fixed','cats','pal','cc','backup','frame','ex']};
   var layoutEdit=null,curOrder={};
   function M(id){return '\u0001'+id+'\u0002'}
   function layoutBtn(tk){return '<button type="button" class="link" data-act="layout" data-t="'+tk+'">'+(layoutEdit===tk?'完成':'調整版面')+'</button>'}
@@ -1209,67 +1249,40 @@ html:not(.nofr) .pw .sbar{display:flex;position:absolute;top:0;left:0;right:0;he
     $('tab-inv').innerHTML=finish('inv',h);
   }
 
-  function subsHtml(sel_){
-    var sb=subEditing?state.subs.filter(function(x){return x.id===subEditing})[0]:null;
-    var catDef=state.cats.exp.indexOf('訂閱')>=0?'訂閱':state.cats.exp[0];
-    var v=sb||{name:'',amount:'',method:'card',day:1,every:1,anchor:now.getMonth()+1,cat:catDef,inFixed:false};
-    var tot=sum(state.subs.filter(function(x){return subDue(x,view.y,view.m)}));
-    var list=state.subs.length?state.subs.map(function(t){
-      var cyc=EVERY[t.every]||('每 '+t.every+' 個月');
-      return '<div class="fx"><div class="m"><b style="font-weight:500">'+esc(t.name)+'</b>'+(t.inFixed?'<span class="tagsm">算在保底</span>':'')+'<br><span>'+cyc+(t.every>1?'（'+t.anchor+' 月起）':'')+' · '+t.day+' 日 · '+FXM[t.method]+'</span></div>'+
-        '<div class="r"><div class="num">'+fmt(t.amount)+'</div><span class="links"><button type="button" class="del" data-act="sb-edit" data-id="'+t.id+'">編輯</button>'+(pendingSub===t.id
-          ?'<button type="button" class="del ok" data-act="sb-ok" data-id="'+t.id+'">確定刪除</button><button type="button" class="del" data-act="sb-cancel">取消</button>'
-          :'<button type="button" class="del" data-act="sb-del" data-id="'+t.id+'">刪除</button>')+'</span></div></div>';
-    }).join('')+'<div class="fx"><b style="font-weight:500">'+(view.m+1)+' 月合計</b><div class="num" style="text-align:right">'+fmt(tot)+'</div></div>':emptyBox('還沒有循環扣款');
-    return '<section class="card"><h2>'+ic('cloud','c-blue')+'循環扣款</h2><p class="s" style="margin:4px 0 0">每月自動扣的訂閱或帳單，會顯示在行事曆上，到了日期自動記一筆。和上面的保底分開算。</p><div style="margin-top:6px">'+list+'</div>'+
-      '<div class="fxform"><div class="full"><span class="lbl">'+(sb?'編輯循環扣款':'新增循環扣款')+'</span><input id="sb-name" type="text" maxlength="12" placeholder="項目，例如影音訂閱" aria-label="項目名稱" value="'+esc(v.name)+'"></div>'+
-      '<div><label class="lbl" for="sb-amt">金額</label><input id="sb-amt" type="text" inputmode="numeric" value="'+v.amount+'"></div>'+
-      '<div><label class="lbl" for="sb-method">扣款方式</label><select id="sb-method">'+sel_([['card','信用卡'],['transfer','匯款／轉帳扣款'],['cash','現金']],v.method)+'</select></div>'+
-      '<div><label class="lbl" for="sb-day">每月幾號</label><select id="sb-day">'+sel_(Array.from({length:31},function(_,i){return [i+1,(i+1)+' 日']}),v.day)+'</select></div>'+
-      '<div><label class="lbl" for="sb-every">循環</label><select id="sb-every">'+sel_([[1,'每月'],[2,'每 2 個月'],[3,'每季'],[6,'每半年'],[12,'每年']],v.every)+'</select></div>'+
-      '<div class="full" id="sb-anchor-box"'+(v.every>1?'':' hidden')+'><label class="lbl" for="sb-anchor">從幾月開始算</label><select id="sb-anchor">'+sel_(Array.from({length:12},function(_,i){return [i+1,(i+1)+' 月']}),v.anchor)+'</select></div>'+
-      '<div class="full"><label class="lbl" for="sb-cat">品項</label><select id="sb-cat">'+sel_(state.cats.exp.map(function(n){return [n,n]}),v.cat)+'</select></div>'+
-      '<div class="full"><label class="chk"><input id="sb-infixed" type="checkbox"'+(v.inFixed?' checked':'')+'><span>算進保底款項<br><span class="s">預設不勾，當成一般支出，信用卡的會進帳單。勾了就會加進預算頁的保底總額，不計入每月花費上限，也不進帳單。如果同一筆已經在上面的保底清單裡，不要勾，也不要重複新增。</span></span></label></div>'+
-      '<button type="button" class="btn full" data-act="sb-save" style="margin-top:4px">'+(sb?'更新':'新增到清單')+'</button>'+
-      (sb?'<button type="button" class="btn alt full" data-act="sb-editcancel" style="margin-top:0">取消編輯</button>':'')+'</div>'+
-      '<p class="s" style="margin:10px 0 0">新增後從今天起算，到了扣款日自動記一筆，過去的日期不會補記。自動記的那筆可以像一般紀錄一樣修改或刪除。</p></section>';
-  }
-
   /* settings tab */
   function renderSettings(){
     var c=state.closing;
     var opts='';for(var i=1;i<=31;i++)opts+='<option value="'+i+'"'+(i===c?' selected':'')+'>'+(i===31?'31 日（月底）':i+' 日')+'</option>';
     var popts='';for(var pi=1;pi<=31;pi++)popts+='<option value="'+pi+'"'+(pi===(state.payday||1)?' selected':'')+'>'+(pi===31?'31 日（月底）':pi+' 日')+'</option>';
     var f=fxEditing?state.fixed.filter(function(x){return x.id===fxEditing})[0]:null;
-    var fv=f||{name:'',amount:'',method:'transfer',day:1,every:1,anchor:now.getMonth()+1};
+    var fv=f||{name:'',amount:'',method:'transfer',day:1,every:1,anchor:now.getMonth()+1,auto:true};
     function sel_(arr,cur){return arr.map(function(o){return '<option value="'+o[0]+'"'+(String(o[0])===String(cur)?' selected':'')+'>'+o[1]+'</option>'}).join('')}
     var h='<header class="top"><div class="brand">'+ic('sparkle','c-lilac')+'設定 <span class="tag">測試版</span></div>'+layoutBtn('set')+'</header>';
 
-    h+=M('fixed')+'<section class="card"><h2>'+ic('heart','c-pink')+'保底款項</h2><p class="s" style="margin:4px 0 0">每月固定要付的錢。可以設扣款方式和循環。</p><div style="margin-top:6px">'+
+    h+=M('fixed')+'<section class="card"><h2>'+ic('heart','c-pink')+'保底款項</h2><p class="s" style="margin:4px 0 0">每月固定要付的錢，金額和日期會顯示在行事曆上。可以選要不要自動記，日期也可以設成不固定。</p><div style="margin-top:6px">'+
       (state.fixed.length?state.fixed.map(function(t){
         var cyc=EVERY[t.every]||('每 '+t.every+' 個月');
-        return '<div class="fx"><div class="m"><b style="font-weight:500">'+esc(t.name)+'</b><br><span>'+cyc+(t.every>1?'（'+t.anchor+' 月起）':'')+' · '+t.day+' 日 · '+FXM[t.method]+'</span></div>'+
-          '<div class="r"><div class="num">'+fmt(t.amount)+'</div><span class="links"><button type="button" class="del" data-act="fx-edit" data-id="'+t.id+'">編輯</button>'+(pendingFx===t.id
+        return '<div class="fx"><div class="m"><b style="font-weight:500">'+esc(t.name)+'</b>'+(t.auto?'<span class="tagsm">自動記</span>':'')+'<br><span>'+cyc+(t.every>1?'（'+t.anchor+' 月起）':'')+' · '+(t.day>0?t.day+' 日':'日期不固定')+' · '+FXM[t.method]+'</span></div>'+
+          '<div class="r"><div class="num">'+fmt(t.amount)+'</div><span class="links">'+(!t.auto&&fxDue(t,view.m)&&!fxHave(t,mkey())?'<button type="button" class="del" data-act="fx-rec" data-id="'+t.id+'" data-date="">記入</button>':'')+'<button type="button" class="del" data-act="fx-edit" data-id="'+t.id+'">編輯</button>'+(pendingFx===t.id
             ?'<button type="button" class="del ok" data-act="fx-ok" data-id="'+t.id+'">確定刪除</button><button type="button" class="del" data-act="fx-cancel">取消</button>'
             :'<button type="button" class="del" data-act="fx-del" data-id="'+t.id+'">刪除</button>')+'</span></div></div>';
       }).join('')+'<div class="fx"><b style="font-weight:500">'+(view.m+1)+' 月合計</b><div class="num" style="text-align:right">'+fmt(sum(state.fixed.filter(function(f){return fxDue(f,view.m)})))+'</div></div>':emptyBox('還沒有保底項目'))+'</div>'+
       '<div class="fxform"><div class="full"><span class="lbl">'+(f?'編輯保底款項':'新增保底款項')+'</span><input id="fx-name" type="text" maxlength="12" placeholder="項目，例如房租" aria-label="項目名稱" value="'+esc(fv.name)+'"></div>'+
       '<div><label class="lbl" for="fx-amt">金額</label><input id="fx-amt" type="text" inputmode="numeric" value="'+fv.amount+'"></div>'+
       '<div><label class="lbl" for="fx-method">扣款方式</label><select id="fx-method">'+sel_([['cash','現金'],['transfer','匯款／轉帳扣款'],['card','信用卡']],fv.method)+'</select></div>'+
-      '<div><label class="lbl" for="fx-day">每月幾號</label><select id="fx-day">'+sel_(Array.from({length:31},function(_,i){return [i+1,(i+1)+' 日']}),fv.day)+'</select></div>'+
+      '<div><label class="lbl" for="fx-day">每月幾號</label><select id="fx-day">'+sel_([[0,'日期不固定']].concat(Array.from({length:31},function(_,i){return [i+1,(i+1)+' 日']})),fv.day)+'</select></div>'+
       '<div><label class="lbl" for="fx-every">循環</label><select id="fx-every">'+sel_([[1,'每月'],[2,'每 2 個月'],[3,'每季'],[6,'每半年'],[12,'每年']],fv.every)+'</select></div>'+
       '<div class="full" id="fx-anchor-box"'+(fv.every>1?'':' hidden')+'><label class="lbl" for="fx-anchor">從幾月開始算</label><select id="fx-anchor">'+sel_(Array.from({length:12},function(_,i){return [i+1,(i+1)+' 月']}),fv.anchor)+'</select></div>'+
+      '<div class="full"><label class="chk"><input id="fx-auto" type="checkbox"'+(fv.auto&&fv.day>0?' checked':'')+(fv.day>0?'':' disabled')+'><span>到日期自動記一筆（循環）<br><span class="s">不勾的話，只在行事曆上提醒，要自己按「記入」。日期不固定的項目不能自動記。從今天起算，過去的日期不會補記。</span></span></label></div>'+
       '<button type="button" class="btn full" data-act="fx-save" style="margin-top:4px">'+(f?'更新':'新增到清單')+'</button>'+
       (f?'<button type="button" class="btn alt full" data-act="fx-editcancel" style="margin-top:0">取消編輯</button>':'')+'</div>'+
       (function(){
         var key=mkey(),have={};
         state.entries.forEach(function(e){if(e.tpl&&e.date.indexOf(key)===0)have[e.tpl]=1});
-        var todo=state.fixed.filter(function(t){return !have[t.id]&&fxDue(t,view.m)});
+        var todo=state.fixed.filter(function(t){return !have[t.id]&&t.day>0&&fxDue(t,view.m)});
         return '<div style="border-top:1.5px dashed var(--line);margin-top:16px;padding-top:4px"><button type="button" class="btn" data-act="fx-apply"'+(todo.length?'':' disabled')+'>'+(todo.length?'把 '+todo.length+' 項加進 '+(view.m+1)+' 月':(view.m+1)+' 月沒有待加入的保底')+'</button>'+
           '<p class="s" style="margin:8px 0 0">加入的月份跟著行事曆目前看的月份。</p></div>';
       })()+'</section>';
-
-    h+=M('subs')+subsHtml(sel_);
 
     function catBox(t,title){
       return '<div style="margin-top:14px"><span class="lbl">'+title+'</span><div class="tagchips">'+state.cats[t].map(function(n){
@@ -1313,7 +1326,7 @@ html:not(.nofr) .pw .sbar{display:flex;position:absolute;top:0;left:0;right:0;he
     if(cj&&cj.done)jl=jl.concat([cj]);
     $('jarpay').innerHTML='<option value="">不用</option>'+jl.map(function(j){return '<option value="'+j.id+'"'+(form.jar===j.id?' selected':'')+'>'+esc(j.name)+'（有 '+fmt(jarSaved(j.id))+'）</option>'}).join('');
     $('jarHint').textContent=form.jar?'這筆不佔每月上限，罐子裡的糖果會變少。':'';
-    var kh={normal:'計入每月上限和刷卡額度。',fixed:state.countFixed?'固定要付的錢，目前有計入上限。':'固定要付的錢，不計入上限，另外統計。',shared:'幫大家代墊，不計入上限，帳單會另外扣掉。',travel:'旅遊另外算，不計入上限。'};
+    var kh={saving:'存起來的錢，從薪資餘額扣掉，不計入生活費，也不進信用卡帳單。',normal:'現金／匯款計入生活費，信用卡計入刷卡額度。',fixed:state.countFixed?'固定要付的錢，目前有計入上限。':'固定要付的錢，不計入上限，另外統計。',shared:'幫大家代墊，不計入上限，帳單會另外扣掉。',travel:'旅遊另外算，不計入上限。'};
     $('kinds').innerHTML=Object.keys(KIND).map(function(k){return '<button type="button" data-act="kind" data-v="'+k+'" aria-pressed="'+(k===form.kind)+'">'+KIND[k]+'</button>'}).join('');
     $('kindHint').textContent=kh[form.kind];
     var cats=(isExp?state.cats.exp:state.cats.inc).slice();
@@ -1418,7 +1431,7 @@ html:not(.nofr) .pw .sbar{display:flex;position:absolute;top:0;left:0;right:0;he
   }
 
   function renderAll(){
-    if(genSubs())toast('已自動加入循環扣款');renderCal();renderBudget();renderJars();renderSettings();renderAdd()}
+    if(genFixed())toast('已自動記入保底');renderCal();renderBudget();renderJars();renderSettings();renderAdd()}
   function setSel(ds){var d=parse(ds);sel=ds;view.y=d.getFullYear();view.m=d.getMonth()}
   function go(t){
     tab=t;
@@ -1504,20 +1517,14 @@ html:not(.nofr) .pw .sbar{display:flex;position:absolute;top:0;left:0;right:0;he
       state.months[P.key]={cap:P.result,card:P.limit};
       save();renderAll();toast('已設為 '+(planView.m+1)+' 月的上限');
     }
-    else if(a==='sb-del'){pendingSub=id;renderSettings()}
-    else if(a==='sb-cancel'){pendingSub=null;renderSettings()}
-    else if(a==='sb-ok'){state.subs=state.subs.filter(function(b){return b.id!==id});pendingSub=null;if(subEditing===id)subEditing=null;save();renderAll()}
-    else if(a==='sb-edit'){subEditing=id;renderSettings();$('sb-name').scrollIntoView({block:'center'})}
-    else if(a==='sb-editcancel'){subEditing=null;renderSettings()}
-    else if(a==='sb-save'){
-      var sname=$('sb-name').value.trim(),samt=num($('sb-amt').value);
-      if(!sname||samt===null||samt<=0){toast('請填項目名稱和金額');return}
-      var sdata={name:sname,amount:samt,method:$('sb-method').value,day:parseInt($('sb-day').value,10)||1,every:parseInt($('sb-every').value,10)||1,anchor:parseInt($('sb-anchor').value,10)||1,cat:$('sb-cat').value,inFixed:$('sb-infixed').checked};
-      if(subEditing){
-        state.subs.forEach(function(b){if(b.id===subEditing){for(var k in sdata)b[k]=sdata[k]}});
-        subEditing=null;toast('已更新');
-      }else{state.subs.push(Object.assign({id:uid(),from:todayStr,gen:{}},sdata));toast('已新增')}
-      save();renderAll();
+    else if(a==='calc'){calcKey(v,t.closest('.calcbar').dataset.t)}
+    else if(a==='fx-rec'){
+      var f0=state.fixed.filter(function(x){return x.id===id})[0],dd=t.dataset.date;
+      if(f0){
+        if(!dd){var k0=mkey();dd=fxDate(f0,view.y,view.m)||(todayStr.indexOf(k0)===0?todayStr:k0+'-01')}
+        state.entries.push({id:uid(),date:dd,type:'exp',amount:f0.amount,method:f0.method,cat:'保底',note:f0.name,kind:'fixed',tpl:f0.id});
+        f0.gen=f0.gen||{};f0.gen[dd.slice(0,7)]=1;save();renderAll();toast('已記入');
+      }
     }
     else if(a==='fx-del'){pendingFx=id;renderSettings()}
     else if(a==='fx-cancel'){pendingFx=null;renderSettings()}
@@ -1527,11 +1534,12 @@ html:not(.nofr) .pw .sbar{display:flex;position:absolute;top:0;left:0;right:0;he
     else if(a==='fx-save'){
       var name=$('fx-name').value.trim(),amt=num($('fx-amt').value);
       if(!name||amt===null||amt<=0){toast('請填項目名稱和金額');return}
-      var data={name:name,amount:amt,method:$('fx-method').value,day:parseInt($('fx-day').value,10)||1,every:parseInt($('fx-every').value,10)||1,anchor:parseInt($('fx-anchor').value,10)||1};
+      var dayv=parseInt($('fx-day').value,10)||0,autoOn=dayv>0&&$('fx-auto').checked,mstart=todayStr.slice(0,8)+'01';
+      var data={auto:autoOn,name:name,amount:amt,method:$('fx-method').value,day:dayv,every:parseInt($('fx-every').value,10)||1,anchor:parseInt($('fx-anchor').value,10)||1};
       if(fxEditing){
-        state.fixed.forEach(function(f){if(f.id===fxEditing){for(var k in data)f[k]=data[k]}});
+        state.fixed.forEach(function(f){if(f.id===fxEditing){if(autoOn&&!f.auto)f.from=todayStr;for(var k in data)f[k]=data[k]}});
         fxEditing=null;toast('已更新');
-      }else{state.fixed.push(Object.assign({id:uid()},data));toast('已新增')}
+      }else{state.fixed.push(Object.assign({id:uid(),gen:{},from:autoOn?todayStr:mstart},data));toast('已新增')}
       save();renderAll();
     }
     else if(a==='fx-apply'){
@@ -1539,9 +1547,9 @@ html:not(.nofr) .pw .sbar{display:flex;position:absolute;top:0;left:0;right:0;he
       state.entries.forEach(function(e){if(e.tpl&&e.date.indexOf(key)===0)have[e.tpl]=1});
       var dim=new Date(view.y,view.m+1,0).getDate(),n=0;
       state.fixed.forEach(function(f){
-        if(have[f.id]||!fxDue(f,view.m))return;
+        if(have[f.id]||!(f.day>0)||!fxDue(f,view.m))return;
         state.entries.push({id:uid(),date:key+'-'+pad(Math.min(f.day,dim)),type:'exp',amount:f.amount,method:f.method,cat:'保底',note:f.name,kind:'fixed',tpl:f.id});
-        n++;
+        f.gen=f.gen||{};f.gen[key]=1;n++;
       });
       save();renderAll();toast('已加入 '+n+' 筆保底');
     }
@@ -1746,7 +1754,33 @@ html:not(.nofr) .pw .sbar{display:flex;position:absolute;top:0;left:0;right:0;he
     document.addEventListener('pointercancel',roCancel);
   });
   document.addEventListener('contextmenu',function(ev){if(ev.target.closest&&ev.target.closest('[data-ro]'))ev.preventDefault()});
-  document.addEventListener('input',function(ev){if(ev.target.id==='fcAmt'||ev.target.id==='fcRate')updateFcPrev()});
+  function updateCalcPrev(){
+    var el=$('calcPrev'),raw=$('amount').value;
+    if(!el)return;
+    if(!hasOp(raw)){el.textContent='';return}
+    var v=calcEval(raw);
+    el.textContent=v===null?'算式還沒完成':'＝ '+fmtFc(Math.round(v*100)/100)+(Math.abs(v-Math.round(v))>1e-9?'（存入時四捨五入成 '+fmt(Math.round(v))+'）':'');
+  }
+  document.addEventListener('input',function(ev){
+    if(ev.target.id==='fcAmt'||ev.target.id==='fcRate')updateFcPrev();
+    if(ev.target.id==='amount')updateCalcPrev();
+  });
+  document.addEventListener('mousedown',function(ev){if(ev.target.closest&&ev.target.closest('.calcbar'))ev.preventDefault()});
+  function calcKey(op,tid){
+    var el=$(tid);if(!el)return;
+    var v=el.value;
+    if(op==='='){
+      var r=calcEval(v);if(r===null)return;
+      el.value=tid==='amount'?String(Math.round(r)):String(Math.round(r*10000)/10000);
+    }else{
+      if(v==='')return;
+      var sym={'+':'+','-':'−','*':'×','/':'÷'}[op];
+      v=v.replace(/[+−×÷\-*\/]$/,'');
+      el.value=v+sym;
+    }
+    if(tid==='amount')updateCalcPrev();else updateFcPrev();
+    try{el.focus();var l=el.value.length;el.setSelectionRange(l,l)}catch(e){}
+  }
 
   document.addEventListener('change',function(ev){
     var id=ev.target.id;
@@ -1770,7 +1804,7 @@ html:not(.nofr) .pw .sbar{display:flex;position:absolute;top:0;left:0;right:0;he
       state.plans[pk][f]=num(ev.target.value);
       save();renderBudget();
     }
-    else if(id==='sb-every'){$('sb-anchor-box').hidden=ev.target.value==='1'}
+    else if(id==='fx-day'){var dz=ev.target.value==='0',ax=$('fx-auto');ax.disabled=dz;if(dz)ax.checked=false}
     else if(id==='fx-every'){$('fx-anchor-box').hidden=ev.target.value==='1'}
     else if(id==='prepaid'){form.prepaid=ev.target.checked}
     else if(id==='fcOn'){
@@ -1797,13 +1831,13 @@ html:not(.nofr) .pw .sbar{display:flex;position:absolute;top:0;left:0;right:0;he
   function doSave(mode){
     var err=$('err'),isExp=form.type==='exp',useFc=isExp&&form.fc,amt,fa=0,fr=0;
     if(useFc){
-      fa=parseFloat(String($('fcAmt').value).replace(/,/g,''));fr=parseFloat(String($('fcRate').value).replace(/,/g,''));
+      fa=calcEval($('fcAmt').value);fr=parseFloat(String($('fcRate').value).replace(/,/g,''));
       if(!(fa>0)){err.textContent='請輸入外幣金額。';return}
       if(!(fr>0)){err.textContent='請輸入匯率。';return}
       amt=Math.max(1,Math.round(fa*fr));
     }else{
-      amt=num($('amount').value);
-      if(amt===null||amt<=0){err.textContent='請輸入大於 0 的金額。';return}
+      var rawAmt=$('amount').value;amt=calcInt(rawAmt);
+      if(amt===null||amt<=0){err.textContent=(hasOp(rawAmt)&&amt===null)?'算式有誤，請檢查。':'請輸入大於 0 的金額。';return}
     }
     if(!sel){err.textContent='請選擇日期。';return}
     var jarId=isExp&&form.jar&&jarById(form.jar)?form.jar:'';
@@ -1828,7 +1862,7 @@ html:not(.nofr) .pw .sbar{display:flex;position:absolute;top:0;left:0;right:0;he
     state.entries.push(data);syncJarLog(data);
     if(isExp)state.lastMethod=form.method;
     save();
-    $('amount').value='';$('note').value='';form.prepaid=false;form.jar='';$('fcAmt').value='';
+    $('amount').value='';updateCalcPrev();$('note').value='';form.prepaid=false;form.jar='';$('fcAmt').value='';
     renderAll();renderForm();toast('已記一筆');
     if(mode==='home'){go('cal');return}
     (form.fc?$('fcAmt'):$('amount')).focus();
